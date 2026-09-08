@@ -1,0 +1,33 @@
+services:
+  vitfly:
+    build:
+      context: ./docker
+    image: vitfly:noetic
+    container_name: vitfly
+    network_mode: host
+    ipc: host
+    shm_size: "2gb"
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - vitfly_catkin_ws:/root/catkin_ws
+      - .:/root/catkin_ws/src/vitfly
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # full /dev/dri (not just the reserved NVIDIA node below) so Mesa/GLX can
+    # find the Intel iGPU render node the host X server actually uses on this
+    # hybrid-graphics laptop -- otherwise GLX apps (rviz) segfault on start
+    devices:
+      - /dev/dri:/dev/dri
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+
+volumes:
+  vitfly_catkin_ws:

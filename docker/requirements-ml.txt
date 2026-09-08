@@ -1,0 +1,14 @@
+# Curated from the upstream requirements.txt (which is a raw `pip freeze` of the
+# authors' desktop and includes many unrelated OS/Ubuntu packages). This keeps
+# only what envtest/, training/, and models/ actually import, pinned to the
+# versions the authors tested with. scipy is added because utils.py imports it
+# but it was missing from the upstream freeze.
+numpy==1.24.4
+pandas==2.0.3
+scipy
+opencv-python==4.10.0.84
+matplotlib==3.7.5
+uniplot==0.16.2
+tensorboard==2.14.0
+torch==2.4.1
+torchvision==0.19.1

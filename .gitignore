@@ -3,3 +3,16 @@
 checklist.md
 *.dat
 *.code-workspace
+
+# Datashare tarballs (see README for download instructions) and their
+# extracted contents are already covered by nested .gitignore files
+# (models/, training/, flightmare/flightpy/configs/vision/,
+# flightmare/flightrender/) -- this just covers the raw downloads themselves.
+/downloads/*
+!/downloads/.gitkeep
+
+# depth images auto-saved during evaluation/data-collection runs
+/envtest/ros/train_set/
+
+# local Claude Code session state
+/.claude/

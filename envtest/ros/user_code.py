@@ -69,11 +69,15 @@ def compute_command_vision_based(state, orig_img, prev_img, desiredVel, trained_
     ###############
 
     q = np.array([state.att[0], state.att[1], state.att[2], state.att[3]])
-    
+
+    # inputs must live on the same device as the model (e.g. when running on a
+    # CUDA-enabled machine, trained_model was moved to "cuda" in run_competition.py)
+    device = next(trained_model.parameters()).device
+
     h, w = (60, 90)
     img = cv2.resize(orig_img, (w, h))
     img2 = orig_img.copy() # used for generating debugimg
-    img = ToTensor()(np.array(img))
+    img = ToTensor()(np.array(img)).to(device)
 
     if 'LSTMNet' in trained_model.__class__.__name__:
         if trained_model.__class__.__name__ == 'LSTMNet':
@@ -87,18 +91,18 @@ def compute_command_vision_based(state, orig_img, prev_img, desiredVel, trained_
             trained_model.lstm.hidden_size = 200
         else:
             raise Exception ("Incorrect Model specified!!")
-        if state.pos[0] < 0.5 or hidden_state is None: 
-            hidden_state = (torch.zeros(trained_model.lstm.num_layers, trained_model.lstm.hidden_size).float(), torch.zeros(trained_model.lstm.num_layers, trained_model.lstm.hidden_size).float())
+        if state.pos[0] < 0.5 or hidden_state is None:
+            hidden_state = (torch.zeros(trained_model.lstm.num_layers, trained_model.lstm.hidden_size).float().to(device), torch.zeros(trained_model.lstm.num_layers, trained_model.lstm.hidden_size).float().to(device))
         with torch.no_grad():
-            x, hidden_state = trained_model([img.view(1, 1, h, w), torch.tensor(desiredVel).view(1, 1).float(), torch.tensor(q).view(1,-1).float() ,hidden_state])
+            x, hidden_state = trained_model([img.view(1, 1, h, w), torch.tensor(desiredVel).view(1, 1).float().to(device), torch.tensor(q).view(1,-1).float().to(device) ,hidden_state])
 
     else:
 
         with torch.no_grad():
-            x, hidden_state = trained_model([img.view(1, 1, h, w), torch.tensor(desiredVel).view(1, 1).float(), torch.tensor(q).view(1,-1).float()])
+            x, hidden_state = trained_model([img.view(1, 1, h, w), torch.tensor(desiredVel).view(1, 1).float().to(device), torch.tensor(q).view(1,-1).float().to(device)])
 
 
-    x = x.squeeze().detach().numpy()
+    x = x.squeeze().detach().cpu().numpy()
     x[0] = np.clip(x[0], -1, 1)
     x = x/np.linalg.norm(x)
     command.velocity = x*desiredVel

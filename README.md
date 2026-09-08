@@ -18,7 +18,72 @@ We demonstrate that vision transformers (ViTs) can be used for end-to-end percep
 
 <img src="media/multi-3d-onboard.gif" width="300" height="200"> <img src="media/7ms-onboard.gif" width="380" height="200">
 
+## Quickstart: run this repo in Docker
+
+This checkout is set up to build and run entirely in Docker (ROS Noetic on Ubuntu 20.04), with this folder bind-mounted into the container — you edit code here on the host, and the container picks up the change immediately, no copying or rebuilding the image required for Python/config changes.
+
+### Prerequisites
+
+- Docker + Docker Compose v2
+- An NVIDIA GPU with `nvidia-container-toolkit` installed (optional, but needed for GPU model inference/training)
+- A running X server (for the RViz and Unity render windows)
+
+### 1. Build and start the container
+
+```
+xhost +local:docker        # allow the container to open windows on your desktop (once per login session)
+docker compose build
+docker compose up -d
+docker compose exec vitfly bash
+```
+
+### 2. First-time catkin build (inside the container)
+
+The workspace is auto-initialized by the container's entrypoint, so you only need to build it:
+
+```
+catkin build
+source devel/setup.bash
+cd src/vitfly
+```
+
+You only need to re-run `catkin build` after changing C++ code (in `flightmare/`, `envsim/`, `dodgedrone_simulation/`, etc). Python changes under `envtest/`, `models/`, `training/` take effect immediately since the repo is bind-mounted.
+
+### 3. Download the required assets
+
+`environments.tar`, `flightrender.tar`, `pretrained_models.tar`, and (only if you want to train) `data.zip` are on the password-protected [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) link (pw: `vitfly2025`) described below — that page needs a logged-in browser, so download them **on the host** into `downloads/`, then, still on the host (no Docker needed for this step):
+
+```
+./extract_assets.sh
+```
+
+This extracts whichever files it finds in `downloads/` to the exact paths the sections below expect (`flightmare/flightpy/configs/vision`, `flightmare/flightrender`, `models`, `training/datasets/data`).
+
+### 4. Run the simulation
+
+Back inside the container:
+
+```
+cd src/vitfly
+bash launch_evaluation.bash 20 vision
+```
+
+RViz and the Unity render window should appear on your desktop, showing the drone flying through the scene with the model's predicted velocity overlaid on the depth image. Per-trial results (success, crash count, time-to-finish) are written to `evaluation.yaml` in the repo root. See [Test (simulation)](#test-simulation) below for how to switch environments (`spheres_medium`/`trees`) and single-environment vs. varied-per-trial (`datagen`/`rollout`) modes.
+
+### Fixes already applied in this checkout
+
+Two environment-specific issues were found and fixed while setting this up — worth knowing about if you pull fresh upstream code or hit similar symptoms elsewhere:
+
+- **`envtest/ros/user_code.py`** — the pretrained model is moved onto CUDA when a GPU is available (`run_competition.py`), but the upstream code never moved the input tensors (`img`, `desiredVel`, `q`, LSTM hidden state) to that same device, so vision-based evaluation crashed immediately on any CUDA-enabled machine (`RuntimeError: Input type (torch.FloatTensor) and weight type (torch.cuda.FloatTensor) should be the same...`). Fixed by moving those tensors to `next(trained_model.parameters()).device`.
+- **`docker-compose.yml`** — on a hybrid-GPU laptop (Intel iGPU + NVIDIA dGPU), `nvidia-container-toolkit` only passes through the reserved NVIDIA GPU's `/dev/dri` render node, not the Intel node the host X server actually renders through. Unity tolerates the resulting GLX/Mesa mismatch (falls back enough to keep working), but RViz segfaults on startup (`process has died ... exit code -11`). Fixed by mounting the full `/dev/dri` directory into the container instead of relying on the GPU-reservation device injection alone.
+
+See `docker/README.md` for more (volume layout, troubleshooting).
+
+---
+
 ## Installation
+
+*(Bare-metal instructions, preserved from upstream for reference — if you're using the Docker setup above, you can skip this section.)*
 
 Note that if you'd only like to train models, and *not* test in simulation, you can skip straight to section Train.
 
