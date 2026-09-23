@@ -164,6 +164,31 @@ bash launch_evaluation.bash 1 vision
 
 Some details: Change `1` to any number of trials you'd like to run. If you look at the bash script, you'll see multiple python scripts being run. `envtest/ros/evaluation_node.py` counts crashes, starts and aborts trials, and prints other statistics to the console. `envtest/ros/run_competition.py` subscribes to input depth images and passes them to the corresponding functions (located in `envtest/ros/user_code.py`) that run the model and return desired velocity commands. The topic `/debug_img1` streams a depth image with an overlaid velocity vector arrow which indicates the model's output velocity command.
 
+## Experimental: RGB → Depth Anything V2 → policy
+
+This checkout also includes an alternate perception pipeline, not part of the original paper: instead of Flightmare's ground-truth depth camera, it estimates depth monocularly from the RGB camera using [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2) (metric, VKITTI/outdoor, ViT-S), converts that into the same normalized encoding the policy was trained on, and feeds it to the same pretrained `ViTLSTM_model.pth`. It's an experiment in whether the policy tolerates estimated depth in place of ground truth — expect it to perform worse than the ground-truth-depth pipeline, not match it.
+
+#### One-time setup
+
+Download the DA2 metric VKITTI Small checkpoint (~99MB) into `models/DepthAnythingV2/checkpoints/` (gitignored, not part of this checkout):
+```
+mkdir -p models/DepthAnythingV2/checkpoints
+curl -sL "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Small/resolve/main/depth_anything_v2_metric_vkitti_vits.pth" \
+  -o models/DepthAnythingV2/checkpoints/depth_anything_v2_metric_vkitti_vits.pth
+```
+
+`models/DepthAnythingV2/depth_calibration.npz` (a small empirically-fit lookup table mapping DA2's predicted meters onto the policy's expected `[0,1]` input range — see `models/DepthAnythingV2/calibrate.py` for how it was derived) is already included. If you change environments significantly or want to re-derive it, run `calibrate.py` against a live simulator (see the script's docstring).
+
+#### Run it
+
+Same pattern as the ground-truth pipeline, but with `launch_evaluation_rgb.bash` (takes only `<N trials>` — it's always vision-based, no `state`/`vision` mode argument):
+```
+bash launch_evaluation_rgb.bash 1
+```
+This drives `envtest/ros/run_competition_rgb.py`, which subscribes to the RGB topic instead of the depth topic; everything else (simulator launch, per-trial reset, results format) matches `launch_evaluation.bash`. Results go to `evaluation_rgb.yaml` instead of `evaluation.yaml`, so they don't overwrite the ground-truth pipeline's results.
+
+**Known good/bad environments**: verified working well in `trees` (20/20 trials, 0 crashes in testing). In `spheres_medium`, results were poor (crashes) in limited testing — this may be a genuine DA2 weakness on spheres (the calibration was fit only on `trees` scenes, and spheres offer fewer monocular depth cues than tree trunks), or it may be affected by the `spheres_medium` + `rollout: 1` bug described below; we don't have a clean ground-truth-depth baseline for `spheres_medium` to isolate which. If testing `spheres_medium`, use `datagen: 1, rollout: 0` (see debugging tips below) to avoid that separate bug.
+
 ## Train
 
 #### Download and set up our dataset
@@ -262,3 +287,8 @@ You can ignore this warning as long as further console prints appear indicating 
 
 #### `[readTrainingObs] Configuration file � does not exists.` (warning)
 This appears when you are in `datagen: 1, rollout: 0` mode, and the scene manager looks for a `custom_` prefixed scene to load which is needed for `datagen: 0, rollout: 1` mode. You can ignore this warning.
+
+#### `terminate called after throwing an instance of 'std::length_error'` / `visionsim_node` crashes with `exit code -6` in `spheres_medium` under `datagen: 0, rollout: 1`
+This is a real data/code mismatch, not a flaky warning -- `datagen: 0, rollout: 1` mode drives obstacle placement through `VisionEnv::readTrainingObs()` in `flightmare/flightlib/src/envs/vision_env/vision_env.cpp`, which reads `custom_<level>/static_kr_N.csv` rows expecting the 11-column format used by `custom_trees` (`name,x,y,z,qw,qx,qy,qz,sx,sy,sz`). `custom_spheres_medium`'s `static_kr_N.csv` files instead use a 6-column format (`x,y,z,scale,scale,scale`, no name/rotation columns) generated for a different obstacle-placement path. Reading past the end of a 6-column row for the missing quaternion/name fields is an out-of-bounds read on the parsed row -- undefined behavior, so it usually silently returns garbage (meaning obstacle positions in `rollout` mode against `spheres_medium` may be corrupted even when it *doesn't* crash) and only occasionally throws this exception outright.
+
+Workaround: use `datagen: 1, rollout: 0` for `spheres_medium` instead (set `env_folder` to pick a specific pre-baked `environment_N`, which uses the full, correctly-formatted `static_obstacles.csv` and never goes through `readTrainingObs()`). `custom_trees` is unaffected by this bug and works fine under `rollout: 1`. A real fix would mean patching `readTrainingObs()` to detect the shorter row format and rebuilding (`catkin build`), which we haven't done here.

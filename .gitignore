@@ -13,6 +13,7 @@ checklist.md
 
 # depth images auto-saved during evaluation/data-collection runs
 /envtest/ros/train_set/
+/envtest/ros/train_set_rgb/
 
 # local Claude Code session state
 /.claude/

@@ -1,0 +1,37 @@
+ON THE HOST FIRST (once per login session, else Unity hangs at "Trying to Connect Unity"):
+
+xhost +local:docker
+
+
+DAv2 baseline :
+
+docker compose restart vitfly
+docker compose exec vitfly bash
+source devel/setup.bash
+export FLIGHTMARE_PATH=/root/catkin_ws/src/vitfly/flightmare
+cd src/vitfly
+bash launch_evaluation_rgb.bash 1
+
+the original one
+
+bash launch_evaluation.bash 1 vision
+
+
+GENERATE RGB TRAINING DATA (expert policy, saves depth + rgb + telemetry):
+
+bash launch_evaluation.bash 20 state
+   -> writes envtest/ros/train_set/<id>/{<ts>.png, <ts>_rgb.png, data.csv}
+
+convert rgb -> DA2 pseudo-depth dataset:
+
+python3 models/DepthAnythingV2/make_da2_dataset.py \
+  --in envtest/ros/train_set --out training/datasets/data_da2 --compare
+
+then set  dataset = data_da2  in training/config/train.txt and:
+
+python3 training/train.py --config training/config/train.txt
+
+
+re-fit the DA2 depth calibration from collected pairs (only if needed):
+
+python3 models/DepthAnythingV2/calibrate_offline.py --in envtest/ros/train_set

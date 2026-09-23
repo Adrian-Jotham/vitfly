@@ -368,7 +368,10 @@ class AgilePilotNode:
                 # Save the image by the name of that instant
                 # np.save(self.folder + f"/im_{timestamp}", self.last_valid_img)
                 cv2.imwrite(f"{self.folder}/{str(timestamp)}.png", (self.last_valid_img*255).astype(np.uint8))
-                cv2.imwrite(f"{self.folder}/{str(timestamp)}_rgb.png", (self.rgb_img*255).astype(np.uint8))
+                # the rgb topic comes through as uint8 0-255 already; scaling it by 255 again
+                # overflows and writes garbage, so only scale when it arrives as float 0-1
+                rgb_u8 = self.rgb_img if self.rgb_img.dtype == np.uint8 else (self.rgb_img*255).astype(np.uint8)
+                cv2.imwrite(f"{self.folder}/{str(timestamp)}_rgb.png", rgb_u8)
 
                 # Get the collision flag
                 col = self.if_collide(obs_data.obstacles[0])
